@@ -1,0 +1,9 @@
+require("std/io.petl")
+require("std/memory.petl")
+
+;; Should compile
+defn main() :: int {
+    printf("Hello, World!\n")
+}
+
+main()

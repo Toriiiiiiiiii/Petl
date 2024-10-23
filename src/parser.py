@@ -1,0 +1,304 @@
+from lexer import *
+from common import *
+
+## AST Node - Used to create a tree structure.
+class ASTNode:
+    def __init__(self, type: str, line: int, col: int, value: str, children: list = []) -> None:
+        self.type = type
+        self.line = line
+        self.col = col
+        self.value = value
+        self.children = children
+
+    ## Returns a JSON-style representation of a node as a string.
+    def asString(self, indent = 0):
+        lineIndent = ' ' * indent
+        resStr  = lineIndent + '{\n'
+        resStr += lineIndent + f'    "type": "{self.type}"\n'
+        resStr += lineIndent + f'    "line": {self.line}\n'
+        resStr += lineIndent + f'    "col": {self.col}\n'
+        resStr += lineIndent + f'    "value:" "{self.value}"\n'
+
+        if len(self.children) > 0:
+            resStr += lineIndent + f'    "children": [\n'
+            for index in range(len(self.children)-1):
+                if isinstance(self.children[index], ASTNode):
+                    resStr += self.children[index].asString(indent = indent + 4) + ',\n'
+
+            if isinstance(self.children[len(self.children)-1], ASTNode):
+                resStr += self.children[len(self.children)-1].asString(indent = indent + 4) + '\n'
+
+            resStr += lineIndent + f'    ]\n'
+        else:
+            resStr += lineIndent + f'    "children": []\n'
+
+        resStr += lineIndent + '}'
+        return resStr
+        
+    def __repr__(self) -> str:
+        return self.asString() + '\n'
+
+## Parser class used to generate an AST from tokens.
+class Parser:
+    def __init__(self, tokens: list) -> None:
+        self.tokens = tokens
+        self.ast = []
+        
+        self.parse()
+
+    ## Get next token
+    def at(self) -> Token:
+        return self.tokens[0]
+
+    ## Get next token and advance
+    def consume(self) -> Token:
+        return self.tokens.pop(0)
+
+    ## Simply returns true if parsing is complete
+    def empty(self) -> bool:
+        return True if len(self.tokens) == 0 else False
+
+    ## Parse Atom
+    def parseAtom(self) -> ASTNode:
+        tok = self.consume()
+
+        ## Number literals
+        if tok.type == "Number":
+            return ASTNode("Number",
+                           tok.line, tok.col,
+                           tok.value, [])
+
+        ## String Literals
+        if tok.type == "String":
+            return ASTNode("String",
+                           tok.line, tok.col,
+                           tok.value, [])
+        
+        ## Brackets
+        elif tok.type == "Parenthesis":
+            terminator = ""
+            if tok.value == "(": terminator = ")"
+            elif tok.value == "[": terminator = "]"
+            elif tok.value == "{": terminator = "}"
+            else:
+                petlError(f"Syntax error: Closing parenthesis without opening at line {tok.line}, column {tok.col}")
+            
+            result = ASTNode("Block",
+                             tok.line, tok.col,
+                             tok.value, [])
+
+            while not self.empty() and self.at().value != terminator:
+                result.children.append(self.parseExpr())
+
+            if self.empty():
+                petlError(f"Syntax error: Unterminated code block at line {tok.line}, column {tok.col}")
+
+            self.consume()
+            return result
+
+        elif tok.value == "...":
+            return ASTNode("varg", tok.line, tok.col, "...", [])
+        
+        ## Function Definitions
+        elif tok.value == "defn":
+            name = self.consume()
+            if name.type != "Keyword":
+                petlError(f"Syntax error: Expected token of type 'Identifier' in function definition, got '{name.type}' (line {name.line}, column {name.col}")
+
+            params = self.parseAtom()
+            if params.type != "Block":
+                petlError(f"Syntax error: Expected parameters in function definition at line {tok.line}, column {tok.col}")
+
+            if self.at().value != "::":
+                petlError(f"Syntax error: Expected type in function definition at line {tok.line}, column {tok.col}")
+
+            self.consume()
+            if self.at().type != "Keyword":
+                petlError(f"Syntax error: Expected type in function definition at line {tok.line} column {tok.col}")
+
+            t = self.consume().value
+                
+            code = self.parseAtom()
+            if code.type != "Block":
+                petlError(f"Syntax error: Expected code block in function definition at line {tok.line}, column {tok.col}")
+
+            return ASTNode("defn", tok.line, tok.col,
+                           name.value, [params, code, t])
+
+        elif tok.value == "extfn":
+            name = self.consume()
+            if name.type != "Keyword":
+                petlError(f"Syntax error: Expected token of type 'Identifier' in declaration of external function, got '{name.type}' (line {name.line}, column {name.col}")
+
+            params = self.parseAtom()
+            if params.type != "Block":
+                petlError(f"Syntax error: Expected parameters in declaration of external function at line {tok.line}, column {tok.col}")
+
+            if self.at().value != "::":
+                petlError(f"Syntax error: Expected type in declaration of external function at line {tok.line}, column {tok.col}")
+
+            self.consume()
+            if self.at().type != "Keyword":
+                petlError(f"Syntax error: Expected type in declaration of external function at line {tok.line}, column {tok.col}")
+
+            t = self.consume().value
+                
+            return ASTNode("extfn", tok.line, tok.col, name.value, [params, t])
+
+        elif tok.value == "type":
+            name = self.consume()
+            if name.type != "Keyword":
+                petlError(f"Syntax error: Expected tokenof type 'Identifier' in declaration of custom type, got '{name.type}' (line {name.line}, column {name.col}")
+
+            fields = self.parseAtom()
+            if fields.type != "Block":
+                petlError(f"Syntax error: Expected fields in definition of custom type at line {tok.line}, column {tok.col}")
+
+            return ASTNode("type", tok.line, tok.col, name.value, [fields])
+        
+        ## Keywords
+        elif tok.type == "Keyword":
+            if tok.value == "while":
+                if self.at().type != "Parenthesis":
+                    petlError(f"Syntax error: Expected condition in while loop at line {tok.line}, column {tok.col}")
+
+                condition = self.parseAtom()
+
+                if self.at().type != "Parenthesis":
+                    petlError(f"Syntax error: Expected code in while loop at line {tok.line}, column {tok.col}")
+
+                code = self.parseAtom()
+
+                res = ASTNode("while", tok.line, tok.col, "", [condition.children, code.children])
+                return res
+
+            elif tok.value == "if":
+                if self.at().type != "Parenthesis":
+                    petlError(f"Syntax error: Expected condition in if statement at line {tok.line}, column {tok.col}")
+
+                condition = self.parseAtom()
+
+                if self.at().type != "Parenthesis":
+                    petlError(f"Syntax error: Expected code in if statement at line {tok.line}, column {tok.col}")
+
+                code = self.parseAtom()
+
+                res = ASTNode("if", tok.line, tok.col, "", [condition.children, code.children])
+
+                ## Handle elif / else
+                while not self.empty() and self.at().value == "elif":
+                    tok = self.consume()
+                    if self.at().type != "Parenthesis":
+                        petlError(f"Syntax error: Expected condition in elif statement at line {tok.line}, column {tok.col}")
+
+                    cond = self.parseAtom()
+
+                    if self.at().type != "Parenthesis":
+                        petlError(f"Syntax error: Expected code in elif statement at line {tok.line}, column {tok.col}")
+
+                    cde = self.parseAtom()
+
+                    res.children.append([cond.children, cde.children])
+
+                if not self.empty() and self.at().value == "else":
+                    tok = self.consume()
+                    if self.at().type != "Parenthesis":
+                        petlError(f"Syntax error: Expected code in else statement at line {tok.line}, column {tok.col}")
+
+                    cde = self.parseAtom()
+                    res.children.append([cde.children])
+
+                return res
+            
+            elif self.at().type == "Parenthesis" and self.at().value not in ")]}":
+                functionArgs = self.parseAtom()
+                return ASTNode("fncall", tok.line, tok.col, tok.value, [functionArgs])
+
+
+            elif self.at().value == "::":
+                varName = tok.value
+
+                self.consume()
+                varType = self.consume().value
+
+                if self.at().value == "=":
+                    self.consume()
+                    varDefinition = self.parseExpr()
+
+                    return ASTNode("assign", tok.line, tok.col, varName, [varDefinition, varType])
+                    
+                return ASTNode("declare", tok.line, tok.col, varName, [varType])
+            
+            elif self.at().value == "=":
+                varName = tok.value
+
+                self.consume()
+                varDefinition = self.parseExpr()
+                return ASTNode("assign", tok.line, tok.col, varName, [varDefinition])
+            
+            return ASTNode("identifier", tok.line, tok.col, tok.value, [])
+        else:
+            petlError(f"Syntax error: Unexpected token of type '{tok.type}' at line {tok.line}, column {tok.col}")
+    
+    ## Parse Multiplication / Division
+    def parseMul(self) -> ASTNode:
+        left = self.parseAtom()
+
+        while not self.empty() and (self.at().value in "*/%"):
+            tok = self.consume()
+            temp = ASTNode("Operation",
+                           tok.line, tok.col,
+                           tok.value, [left])
+
+            right = self.parseAtom()
+            temp.children.append(right)
+            
+            left = temp
+
+        return left
+    
+    ## Parse Addition / Subtraction
+    def parseSum(self) -> ASTNode:
+        left = self.parseMul()
+
+        while not self.empty() and (self.at().value in "+-"):
+            tok = self.consume()
+            temp = ASTNode("Operation",
+                           tok.line, tok.col,
+                           tok.value, [left])
+
+            right = self.parseMul()
+            temp.children.append(right)
+            
+            left = temp
+
+        return left
+
+    def parseCond(self) -> ASTNode:
+        left = self.parseSum()
+
+        while not self.empty() and (self.at().value in ["<", ">", "<=", ">=", "==", "!=", "&&", "||"]):
+            tok = self.consume()
+            temp = ASTNode("Operation",
+                           tok.line, tok.col,
+                           tok.value, [left])
+
+            right = self.parseSum()
+            temp.children.append(right)
+            
+            left = temp
+
+        return left
+    
+    ## Parse Statement
+    def parseStmt(self) -> ASTNode:
+        return self.parseCond()
+    
+    ## Parse Expression
+    def parseExpr(self) -> ASTNode:
+        return self.parseStmt()
+    
+    ## Parse tokens and create an AST
+    def parse(self) -> None:
+        while not self.empty():
+            self.ast.append(self.parseExpr())

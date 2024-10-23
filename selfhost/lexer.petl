@@ -1,0 +1,118 @@
+require("std/io.petl")
+require("std/memory.petl")
+
+TOKEN_NULL        :: int = 0
+TOKEN_INTLITERAL  :: int = 1
+TOKEN_KEYWORD     :: int = 2
+TOKEN_STRLITERAL  :: int = 3
+TOKEN_OPERATION   :: int = 4
+TOKEN_PARENTHESIS :: int = 5
+TOKEN_SIZE        :: int = 32
+
+TOKEN_TYPEOFFSET  :: int = 0
+TOKEN_LINEOFFSET  :: int = 8
+TOKEN_COLOFFSET   :: int = 16
+TOKEN_VALUEOFFSET :: int = 24
+
+TOKENLIST_CAPOFFSET  :: int = 0
+TOKENLIST_SIZEOFFSET :: int = 8
+TOKENLIST_BUFOFFSET  :: int = 16
+
+type token  {
+    tokenType :: int
+    tokenLine :: int
+    tokenCol :: int
+    tokenValue :: ptr
+}
+
+type lexer {
+    source :: ptr
+    line :: int
+    col :: int
+}
+
+type tokenlist {
+    capacity :: int
+    size :: int
+    buf :: ptr
+}
+
+defn printToken(tok :: token) :: void {
+    printf("TOKEN[%lu] : {%lu:%lu, %s}\n" tok.tokenType tok.tokenLine tok.tokenCol tok.tokenValue)
+}
+
+defn initTokenList() :: ptr {
+    list :: tokenlist = 0
+
+    list.capacity = 10
+    list.size = 0
+    list.buf = malloc(list.capacity * TOKEN_SIZE)
+
+    return(addr(list))
+}
+
+defn destroyTokenList(list :: ptr) :: void {
+    free( getptr(list + TOKENLIST_BUFOFFSET 8) )
+}
+
+;; Append a token to a tokenlist structure
+defn tokenlistAppend(list :: ptr value :: token) :: void {
+    size :: int = getptr(list + TOKENLIST_SIZEOFFSET 8)
+    cap :: int = getptr(list + TOKENLIST_CAPOFFSET 8)
+
+    if(size >= cap) {
+        buf :: ptr = getptr(list + TOKENLIST_BUFOFFSET 8)
+        buf = realloc(buf cap*2)
+
+        setptr(list + TOKENLIST_BUFOFFSET buf 8)
+        setptr(list + TOKENLIST_CAPOFFSET cap*2 8)
+    }
+
+    tokenList :: ptr = getptr(list + TOKENLIST_BUFOFFSET 8)
+    baseOffset :: ptr = tokenList + TOKEN_SIZE * size
+
+    setptr(baseOffset + TOKEN_TYPEOFFSET  1  8)
+    setptr(baseOffset + TOKEN_LINEOFFSET  2  8)
+    setptr(baseOffset + TOKEN_COLOFFSET   3  8)
+    setptr(baseOffset + TOKEN_VALUEOFFSET value.tokenValue 8)
+
+    setptr(list + TOKENLIST_SIZEOFFSET size+1 8)
+}
+
+defn tokenlistPeek(list :: ptr index :: int dest :: ptr) :: void {
+    size :: int = getptr(list + TOKENLIST_SIZEOFFSET 8)
+
+    if(index >= size) {
+        printf("Attempting to read out of range of list index!\n")
+        return(0)
+    }
+
+    result :: token = 0
+    tokenList :: ptr = getptr(list + TOKENLIST_BUFOFFSET 8)
+    baseOffset :: ptr = tokenList + TOKEN_SIZE * index
+
+    result.tokenType  = getptr(baseOffset + TOKEN_TYPEOFFSET  8)
+    result.tokenLine  = getptr(baseOffset + TOKEN_LINEOFFSET  8)
+    result.tokenCol   = getptr(baseOffset + TOKEN_COLOFFSET   8)
+    result.tokenValue = getptr(baseOffset + TOKEN_VALUEOFFSET 8)
+
+    setptr(dest + TOKEN_TYPEOFFSET result.tokenType 8)
+    setptr(dest + TOKEN_LINEOFFSET result.tokenLine 8)
+    setptr(dest + TOKEN_COLOFFSET result.tokenCol 8)
+    setptr(dest + TOKEN_VALUEOFFSET result.tokenValue 8)
+}
+
+defn tokenize(source :: ptr) :: ptr {
+    ;; Create token list and zero out memory.
+    tokenList :: tokenlist = initTokenList()
+    
+    listIndex :: int = 0
+    strIndex :: int = 0
+
+    while(strIndex < strlen(source)) {
+        printf("%c\n" getptr(source + strIndex 1))
+        strIndex = strIndex + 1
+    }
+
+    return(tokenList)
+}

@@ -1,0 +1,29 @@
+require("std/io.petl")
+require("std/memory.petl")
+require("lexer.petl")
+
+defn main() :: void {
+    testToken :: token = 0
+
+    testToken.tokenType  = TOKEN_INTLITERAL
+    testToken.tokenLine  = 12
+    testToken.tokenCol   = 34
+    testToken.tokenValue = "This is a test token"
+
+    testList :: ptr = initTokenList()
+    tokenlistAppend(testList testToken)
+
+    tokenRead :: token = 0
+    tokenlistPeek(testList 0 addr(tokenRead))
+    printToken(tokenRead)
+}
+
+testVar :: int = 69
+testPtr :: ptr = addr(testVar)
+
+setptr(testPtr 24 8)
+
+;printf("%p : %lu\n" testPtr getptr(testPtr 8))
+
+main()
+

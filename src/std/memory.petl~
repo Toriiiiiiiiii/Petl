@@ -1,0 +1,23 @@
+extfn malloc(size) :: ptr
+extfn free(ptr) :: void
+extfn realloc(ptr size) :: ptr
+
+defn memcpy(src dest nbytes) :: void {
+    index :: int = 0
+    while(index < nbytes) {
+        byte :: int = getptr(src+index 1)
+        setptr(dest+index byte)
+
+        index = index + 1
+    }
+}
+
+defn memset(dest membsize nmemb val) :: void {
+    index :: int = 0
+    while(index < nmemb) {
+        ptr :: ptr = dest + (index * membsize)
+        setptr(ptr val)
+
+        index = index + 1
+    }
+}

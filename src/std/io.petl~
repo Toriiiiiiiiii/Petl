@@ -1,0 +1,28 @@
+;; libc functions
+extfn printf(fmt ...) :: void
+
+defn puts(str) :: void {
+    setreg(rsi str)
+    setreg(rdx strlen(str))
+    setreg(rdi 1)
+    setreg(rax 1)
+    syscall()
+}
+
+defn getln(buf maxchars) :: void {
+    setreg(rsi buf)
+    setreg(rdx maxchars)
+    setreg(rdi 0)
+    setreg(rax 0)
+    syscall()
+}
+
+defn strlen(str) :: int {
+    index :: int = 0
+    while(1) {
+        char :: int = getptr(str+index 1)
+
+        if(char == 0) { return(index) }
+        index = index + 1
+    }
+}
